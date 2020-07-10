@@ -18,13 +18,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hot-sftp"
-version = "0.1.0"
-dependencies = [
- "chrono",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.71"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -47,6 +40,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac267bcc07f48ee5f8935ab0d24f316fb722d7a1292e2913f0cc196b29ffd611"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "perp-sftp"
+version = "0.1.0"
+dependencies = [
+ "chrono",
 ]
 
 [[package]]

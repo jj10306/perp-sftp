@@ -46,8 +46,11 @@ fn traverse_from(entry_point: String) {
         for entry in dir_iter {
             match entry {
                 Ok(entry) => {
-                    println!("{:?}", entry.file_name());
-                    let path_string = pathbuf_to_string(entry.path());
+                    let metadata = entry.metadata().unwrap();
+                    let last_modified = get_last_modified_time(&entry);
+                    let path = entry.path();
+                    println!("{:?}, {:?}", path, last_modified);
+                    let path_string = pathbuf_to_string(path);
                     traverse_from(path_string);
                 },
                 Err(_) => println!("sumn went wrong")
@@ -66,6 +69,7 @@ fn construct_tree(root: String, depth: u16) -> Node {
             match entry {
                 Ok(entry) => {
                     let path_string = pathbuf_to_string(entry.path());
+                    node.last_modified = get_last_modified_time(&entry);
                     node.add_child(construct_tree(path_string, depth + 1));
                 },
                 Err(_) => println!("sumn went wrong")
@@ -73,7 +77,17 @@ fn construct_tree(root: String, depth: u16) -> Node {
         } 
     }
     node
+}
 
+
+fn traverse_tree<'a>(root: &'a Node) {
+    for child in &root.children {
+        println!("{:?}", &child);
+        traverse_tree(&child);
+    }
+}
+fn get_last_modified_time(entry: &fs::DirEntry) -> DateTime<Utc> {
+    std::convert::From::from(entry.metadata().unwrap().modified().unwrap())
 }
 // converting PathBuf to String is verbose bc PathBuf isn't necessarily UTF-8 Encoded 
 fn pathbuf_to_string(pb: PathBuf) -> String {
@@ -81,6 +95,10 @@ fn pathbuf_to_string(pb: PathBuf) -> String {
 }
 
 fn main() {
+    println!("Traverse FS:");
+    traverse_from("../root".to_string());
     let root = construct_tree("../root".to_string(), 0);
-    println!("{:?}", root);
+    let tree = DirTree::new(root);
+    println!("Traverse Tree:");
+    traverse_tree(&tree.root);
 }
