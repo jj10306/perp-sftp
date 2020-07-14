@@ -40,6 +40,37 @@ impl DirTree {
             root
         }
     }
+    fn get_iter(&self) -> DirTreeIter {
+        DirTreeIter::new(&self.root)
+    }
+}
+
+struct DirTreeIter<'a> {
+    q: VecDeque<&'a Node>
+}
+impl<'a> DirTreeIter<'a> {
+    fn new(root: &'a Node) -> DirTreeIter<'a> {
+        let mut q: VecDeque<&Node> = VecDeque::new();
+        q.push_front(root);
+        DirTreeIter {
+            q
+        }
+    }
+}
+impl<'a> std::iter::Iterator for DirTreeIter<'a> {
+    type Item = &'a Node;
+
+    fn next(&mut self) -> Option<&'a Node> {
+        if self.q.is_empty() {
+             None
+        } else {
+            let rtn = self.q.pop_back().unwrap();
+            for child in &rtn.children {
+                self.q.push_front(child);
+            }
+            Some(rtn)
+        }
+    }
 }
 #[allow(dead_code)]
 fn traverse_from(entry_point: String) {
@@ -106,10 +137,13 @@ fn order_level(root: String) {
     q.push_front(root);
     while !q.is_empty() {
         let prev = q.pop_back().unwrap();
-        println!("{:?}", prev.name);
-        for entry in fs::read_dir(prev).unwrap() {
-            q.push_front(entry);
-        }
+        println!("{:?}", prev);
+        if let Ok(dir_iter) = fs::read_dir(prev) {
+            for entry in dir_iter {
+                let child_path = pathbuf_to_string(entry.unwrap().path());
+                q.push_front(child_path);
+            }
+        } 
     }
     // if let Ok(mut dir_iter) = fs::read_dir(root) {
     //     while let Some(next) = dir_iter.next() {
@@ -135,8 +169,11 @@ fn main() {
     // traverse_from("../root".to_string());
     let root = construct_tree("../root".to_string(), 0);
     let tree = DirTree::new(root);
-    level_order(&tree.root);
-    order_level("../root".to_string());
+    // println!("Level Order:");
+    // level_order(&tree.root);
+    // println!("Order Level:");
+    // order_level("../root".to_string());
+    let mut iter = tree.get_iter();
     // println!("Traverse Tree:");
     // traverse_tree(&tree.root);
     // loop {
