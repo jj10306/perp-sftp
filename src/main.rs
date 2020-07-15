@@ -113,6 +113,12 @@ impl<'a> std::iter::Iterator for DirTreeIter<'a> {
         }
     }
 }
+
+enum Relationship {
+    Same,
+    Different,
+    OutOfSync
+}
 #[allow(dead_code)]
 fn traverse_from(entry_point: String) {
     if let Ok(dir_iter) = fs::read_dir(entry_point) {
@@ -168,6 +174,10 @@ fn get_last_modified_time(entry: &fs::DirEntry) -> DateTime<Utc> {
 // converting PathBuf to String is verbose bc PathBuf isn't necessarily UTF-8 Encoded 
 fn pathbuf_to_string(pb: PathBuf) -> String {
     pb.into_os_string().into_string().unwrap()
+}
+
+fn compare(tree_entry: & Node, fs_entry: & fs::DirEntry) -> Relationship {
+    Relationship::Same
 }
 
 fn main() {
