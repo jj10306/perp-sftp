@@ -33,6 +33,7 @@ impl Node {
 struct DirTree {
     root: Node
 }
+// TODO: Implement IntoIter for DirTree and remove 'get_iter' method
 impl DirTree {
     #[allow(dead_code)]
     fn new(root: Node) -> DirTree {
@@ -44,6 +45,42 @@ impl DirTree {
         DirTreeIter::new(&self.root)
     }
 }
+struct FileSystemTreeIter {
+    q: VecDeque<fs::DirEntry>
+}
+
+impl FileSystemTreeIter {
+    fn new(root: String) -> FileSystemTreeIter {
+        let mut q: VecDeque<fs::DirEntry> = VecDeque::new();
+        if let Ok(dir_iter) = fs::read_dir(root) {
+            for entry in dir_iter {
+                q.push_front(entry.unwrap());
+            }
+        } 
+        FileSystemTreeIter {
+            q
+        }
+    }
+}
+
+impl std::iter::Iterator for FileSystemTreeIter {
+    type Item = fs::DirEntry;
+
+    fn next(&mut self) -> Option<fs::DirEntry> {
+        if self.q.is_empty() {
+            None
+        } else {
+            let rtn = self.q.pop_back().unwrap();
+            let path = pathbuf_to_string(rtn.path());
+            if let Ok(dir_iter) = fs::read_dir(path) {
+                for entry in dir_iter {
+                    self.q.push_front(entry.unwrap());
+                }
+            }
+            Some(rtn)  
+        }
+    }
+}
 
 struct DirTreeIter<'a> {
     q: VecDeque<&'a Node>
@@ -51,12 +88,16 @@ struct DirTreeIter<'a> {
 impl<'a> DirTreeIter<'a> {
     fn new(root: &'a Node) -> DirTreeIter<'a> {
         let mut q: VecDeque<&Node> = VecDeque::new();
-        q.push_front(root);
+        // exclude the root from the traversal since FSIter is unable to cleanly get a DirEntry for the root
+        for child in &root.children {
+            q.push_front(child)
+        }
         DirTreeIter {
             q
         }
     }
 }
+
 impl<'a> std::iter::Iterator for DirTreeIter<'a> {
     type Item = &'a Node;
 
@@ -119,41 +160,6 @@ fn traverse_tree<'a>(root: &'a Node) {
         traverse_tree(&child);
     }
 }
-// manual level order for the tree
-fn level_order<'a>(root: &'a Node) {
-    let mut q: VecDeque<&Node> = VecDeque::new();
-    q.push_front(root);
-    while !q.is_empty() {
-        let prev = q.pop_back().unwrap();
-        println!("{:?}", prev.name);
-        for child in &prev.children {
-            q.push_front(child);
-        }
-    }
-}
-// use the DirIter
-fn order_level(root: String) {
-    let mut q: VecDeque<String> = VecDeque::new();
-    q.push_front(root);
-    while !q.is_empty() {
-        let prev = q.pop_back().unwrap();
-        println!("{:?}", prev);
-        if let Ok(dir_iter) = fs::read_dir(prev) {
-            for entry in dir_iter {
-                let child_path = pathbuf_to_string(entry.unwrap().path());
-                q.push_front(child_path);
-            }
-        } 
-    }
-    // if let Ok(mut dir_iter) = fs::read_dir(root) {
-    //     while let Some(next) = dir_iter.next() {
-    //         println!("{:?}", next);
-    //     }
-    // } else {
-    //     println!("no iter here rip");
-    // }
-}
-
 
 
 fn get_last_modified_time(entry: &fs::DirEntry) -> DateTime<Utc> {
@@ -173,15 +179,21 @@ fn main() {
     // level_order(&tree.root);
     // println!("Order Level:");
     // order_level("../root".to_string());
-    let mut iter = tree.get_iter();
-    // println!("Traverse Tree:");
-    // traverse_tree(&tree.root);
-    // loop {
-    //     traverse_from("../root".to_string());
-    //     println!("\nSleepy....\n");
-    //     std::thread::sleep_ms(3000);
-    // }
+    let mut tree_iter = tree.get_iter();
+    let mut fs_iter = FileSystemTreeIter::new("../root".to_string());
 
+    let mut tree_handle = tree_iter.next();
+    let mut fs_handle = fs_iter.next();
+    while fs_handle.is_some() || tree_handle.is_some() {
+        let tree_name = &tree_handle.unwrap().name;
+        let tree_modified = tree_handle.unwrap().last_modified;
+        println!("Tree Handle: {:?}, {:?}", tree_name, tree_modified);
+        let fs_name = &fs_handle.as_ref().unwrap().path();
+        let fs_modified =  get_last_modified_time(&fs_handle.as_ref().unwrap());
+        println!("FS Handle: {:?}, {:?}", fs_name, fs_modified);
+        tree_handle = tree_iter.next();
+        fs_handle = fs_iter.next();
+    }
 }
 
 // Cases: 
