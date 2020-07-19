@@ -1,6 +1,7 @@
+#![feature(deque_make_contiguous)]
 extern crate chrono;
 
-use std::{fs, vec::Vec, string::String, path::PathBuf};
+use std::{fs, vec::Vec, string::String, path::PathBuf, cmp::Ordering};
 use std::collections::VecDeque;
 use chrono::{Utc, DateTime};
 
@@ -29,6 +30,25 @@ impl Node {
         self.last_modified = Utc::now();
     }
 }
+impl std::cmp::Ord for Node {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.cmp(&other.name)
+    }
+}
+
+impl PartialOrd for Node {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Eq for Node {}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
 #[derive(Debug)]
 struct DirTree {
     root: Node
@@ -46,16 +66,21 @@ impl DirTree {
     }
 }
 struct FileSystemTreeIter {
-    q: VecDeque<fs::DirEntry>
+    q: VecDeque<Option<fs::DirEntry>>
 }
 
 impl FileSystemTreeIter {
     fn new(root: String) -> FileSystemTreeIter {
-        let mut q: VecDeque<fs::DirEntry> = VecDeque::new();
+        let mut q: VecDeque<Option<fs::DirEntry>> = VecDeque::new();
         if let Ok(dir_iter) = fs::read_dir(root) {
             for entry in dir_iter {
-                q.push_front(entry.unwrap());
+                q.push_front(entry.ok());
             }
+            // level change indicator
+            q.push_front(None);
+            // TODO: sort
+            q.make_contiguous().sort_by(|a, b| sort_dir_entries(a, b));
+            println!("{:?}", q);
         } 
         FileSystemTreeIter {
             q
@@ -67,31 +92,62 @@ impl std::iter::Iterator for FileSystemTreeIter {
     type Item = fs::DirEntry;
 
     fn next(&mut self) -> Option<fs::DirEntry> {
-        if self.q.is_empty() {
+        if self.q.len() == 1 {
             None
         } else {
-            let rtn = self.q.pop_back().unwrap();
-            let path = pathbuf_to_string(rtn.path());
-            if let Ok(dir_iter) = fs::read_dir(path) {
-                for entry in dir_iter {
-                    self.q.push_front(entry.unwrap());
+            // TODO: check if it's None
+            if let Some(dir_entry) = self.q.pop_back().unwrap() {
+                let path = pathbuf_to_string(dir_entry.path());
+                if let Ok(dir_iter) = fs::read_dir(path) {
+                    for entry in dir_iter {
+                        self.q.push_front(entry.ok());
+                    }
                 }
+                Some(dir_entry)  
+            } else {
+                // None popped which indicates a new level. Must push new None to indcate future level change
+                self.q.push_front(None);
+                // TODO: sort
+                println!("new leevl");
+                self.q.make_contiguous().sort_by(|a, b| sort_dir_entries(a, b));
+                // recursively call next()
+                self.next()
             }
-            Some(rtn)  
         }
     }
 }
 
+fn sort_dir_entries(a: &Option<fs::DirEntry>, b: &Option<fs::DirEntry>) -> Ordering {
+    //return if a > b
+    if a.is_none() && b.is_some() {
+        Ordering::Less
+    } else if a.is_none() && b.is_none() {
+        // this should never happen because there should never be more than one None in the queue at a time
+        Ordering::Equal
+    } else if a.is_some() && b.is_none() {
+        Ordering::Greater
+    } else {
+        let a_string = pathbuf_to_string(a.as_ref().unwrap().path());
+        let b_string = pathbuf_to_string(b.as_ref().unwrap().path());
+        let res = a_string.cmp(&b_string);
+        println!("{:?} is {:?} than {:?}", a_string, res, b_string);
+        res
+    }
+}
+
 struct DirTreeIter<'a> {
-    q: VecDeque<&'a Node>
+    q: VecDeque<Option<&'a Node>>
 }
 impl<'a> DirTreeIter<'a> {
     fn new(root: &'a Node) -> DirTreeIter<'a> {
-        let mut q: VecDeque<&Node> = VecDeque::new();
+        let mut q: VecDeque<Option<&Node>> = VecDeque::new();
         // exclude the root from the traversal since FSIter is unable to cleanly get a DirEntry for the root
         for child in &root.children {
-            q.push_front(child)
+            q.push_front(Some(child))
         }
+        q.push_front(None);
+        // TODO: sort
+        q.make_contiguous().sort();
         DirTreeIter {
             q
         }
@@ -102,14 +158,19 @@ impl<'a> std::iter::Iterator for DirTreeIter<'a> {
     type Item = &'a Node;
 
     fn next(&mut self) -> Option<&'a Node> {
-        if self.q.is_empty() {
+        if self.q.len() == 1 {
              None
         } else {
-            let rtn = self.q.pop_back().unwrap();
-            for child in &rtn.children {
-                self.q.push_front(child);
+            if let Some(dir_entry) = self.q.pop_back().unwrap() {
+                for child in &dir_entry.children {
+                    self.q.push_front(Some(child));
+                }
+                Some(dir_entry)
+            } else {
+                self.q.push_front(None);
+                self.q.make_contiguous().sort();
+                self.next()
             }
-            Some(rtn)
         }
     }
 }
@@ -119,6 +180,7 @@ enum Relationship {
     Different,
     OutOfSync
 }
+
 #[allow(dead_code)]
 fn traverse_from(entry_point: String) {
     if let Ok(dir_iter) = fs::read_dir(entry_point) {
@@ -183,14 +245,14 @@ fn compare(tree_entry: & Node, fs_entry: & fs::DirEntry) -> Relationship {
 fn main() {
     // println!("Traverse FS:");
     // traverse_from("../root".to_string());
-    let root = construct_tree("../root".to_string(), 0);
+    let root = construct_tree("../r".to_string(), 0);
     let tree = DirTree::new(root);
     // println!("Level Order:");
     // level_order(&tree.root);
     // println!("Order Level:");
     // order_level("../root".to_string());
     let mut tree_iter = tree.get_iter();
-    let mut fs_iter = FileSystemTreeIter::new("../root".to_string());
+    let mut fs_iter = FileSystemTreeIter::new("../r".to_string());
 
     let mut tree_handle = tree_iter.next();
     let mut fs_handle = fs_iter.next();
@@ -204,6 +266,7 @@ fn main() {
         tree_handle = tree_iter.next();
         fs_handle = fs_iter.next();
     }
+    let mut a: VecDeque<usize> = VecDeque::new();
 }
 
 // Cases: 
